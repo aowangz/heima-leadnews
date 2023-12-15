@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.heima.apis.article.IArticleClient;
 import com.heima.common.aliyun.GreenImageScan;
 import com.heima.common.aliyun.GreenTextScan;
+import com.heima.common.tess4j.Tess4jClient;
 import com.heima.file.service.FileStorageService;
 import com.heima.model.article.dtos.ArticleDto;
 import com.heima.model.common.dtos.ResponseResult;
@@ -26,6 +27,9 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -133,6 +137,9 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
     @Autowired
     private GreenImageScan greenImageScan;
 
+    @Autowired
+    private Tess4jClient tess4jClient;
+
     /**
      * 审核图片
      *
@@ -154,9 +161,27 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
         List<byte[]> imageList = new ArrayList<>();
 
-        for (String image : images) {
-            byte[] bytes = fileStorageService.downLoadFile(image);
-            imageList.add(bytes);
+        try {
+            for (String image : images) {
+                byte[] bytes = fileStorageService.downLoadFile(image);
+
+                //从byte[]转换为butteredImage
+                ByteArrayInputStream in = new ByteArrayInputStream(bytes);
+                BufferedImage imageFile = ImageIO.read(in);
+                
+                //识别图片的文字
+                String result = tess4jClient.doOCR(imageFile);
+
+                //审核是否包含自管理的敏感词
+                boolean isSensitive = handleSensitiveScan(result, wmNews);
+                if (!isSensitive) {
+                    return false;
+                }
+
+                imageList.add(bytes);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
 
